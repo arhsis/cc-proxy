@@ -270,12 +270,29 @@ impl Router {
         // Prepare headers - convert from axum HeaderMap to reqwest HeaderMap
         let mut req_headers = reqwest::header::HeaderMap::new();
         for (key, value) in headers {
-            if key != "host" && key != "authorization" {
-                // Convert header name and value
-                if let Ok(name) = reqwest::header::HeaderName::from_bytes(key.as_str().as_bytes()) {
-                    if let Ok(val) = reqwest::header::HeaderValue::from_bytes(value.as_bytes()) {
-                        req_headers.insert(name, val);
-                    }
+            if key == "host" || key == "authorization" {
+                continue;
+            }
+
+            let lower = key.as_str().to_ascii_lowercase();
+            let is_hop_by_hop = matches!(
+                lower.as_str(),
+                "connection"
+                    | "proxy-connection"
+                    | "keep-alive"
+                    | "transfer-encoding"
+                    | "upgrade"
+                    | "te"
+                    | "trailers"
+            );
+            if is_hop_by_hop || lower == "content-length" {
+                continue;
+            }
+
+            // Convert header name and value
+            if let Ok(req_name) = reqwest::header::HeaderName::from_bytes(key.as_str().as_bytes()) {
+                if let Ok(val) = reqwest::header::HeaderValue::from_bytes(value.as_bytes()) {
+                    req_headers.insert(req_name, val);
                 }
             }
         }
