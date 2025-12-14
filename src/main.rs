@@ -6,16 +6,18 @@ mod settings;
 
 use anyhow::Result;
 use cache_affinity::CacheAffinityManager;
+use local_ip_address::{list_afinet_netifas, local_ip};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use router::Router;
 use std::env;
 use std::fs;
+use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::process;
 use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-const DEFAULT_BIND_ADDR: &str = "127.0.0.1:18100";
+const DEFAULT_BIND_ADDR: &str = "0.0.0.0:18100";
 const CACHE_TTL: u64 = 300; // 5 minutes
 
 #[tokio::main]
@@ -61,9 +63,11 @@ async fn start_daemon() -> Result<()> {
     let pid = process::id();
     write_pid_file(pid)?;
 
+    let advertise_addr = detect_advertise_addr(DEFAULT_BIND_ADDR);
+
     // Configure CLI tools
     println!("⚙️  Configuring CLI tools...");
-    if let Err(e) = settings::configure_all(DEFAULT_BIND_ADDR) {
+    if let Err(e) = settings::configure_all(&advertise_addr) {
         tracing::warn!("Failed to configure CLI tools: {}", e);
         println!("⚠️  Warning: Failed to configure CLI tools automatically");
         println!("   You may need to configure Claude Code and Codex manually");
@@ -91,7 +95,8 @@ async fn start_daemon() -> Result<()> {
 
     // Start server
     println!("✨ cc-proxy is running!");
-    println!("   Listening on: http://{}", DEFAULT_BIND_ADDR);
+    println!("   Listening on:   http://{}", DEFAULT_BIND_ADDR);
+    println!("   Share this URL: http://{}", advertise_addr);
     println!("   Claude Code: POST /v1/messages");
     println!("   Codex:       POST /responses");
     println!();
@@ -203,7 +208,11 @@ fn show_status() -> Result<()> {
     let pid = read_pid_file()?;
     println!("Status: ✅ Running");
     println!("PID:    {}", pid);
-    println!("Addr:   http://{}", DEFAULT_BIND_ADDR);
+    println!("Bind:   http://{}", DEFAULT_BIND_ADDR);
+    println!(
+        "Share:  http://{}",
+        detect_advertise_addr(DEFAULT_BIND_ADDR)
+    );
 
     Ok(())
 }
@@ -245,6 +254,84 @@ fn print_help() {
     println!("    cc-proxy stop");
     println!();
     println!("For more information: https://github.com/yourusername/cc-proxy");
+}
+
+fn detect_advertise_addr(bind_addr: &str) -> String {
+    let socket = bind_addr.parse::<SocketAddr>().ok();
+    let port = socket.map(|sock| sock.port()).unwrap_or(18100);
+
+    if let Some(socket) = socket {
+        let ip = socket.ip();
+        if !ip.is_loopback() && !ip.is_unspecified() {
+            return format!("{}:{}", ip, port);
+        }
+    }
+
+    if let Some(ip) = detect_lan_ip() {
+        let addr = format!("{}:{}", ip, port);
+        tracing::info!("Detected LAN address for CLI config: {}", addr);
+        return addr;
+    }
+
+    tracing::warn!(
+        "Falling back to 127.0.0.1:{} for CLI configuration; could not detect LAN IP",
+        port
+    );
+    format!("127.0.0.1:{}", port)
+}
+
+fn detect_lan_ip() -> Option<IpAddr> {
+    if let Ok(netifs) = list_afinet_netifas() {
+        for (iface, ip) in netifs {
+            if is_virtual_iface(&iface) || !is_usable_ip(&ip) {
+                continue;
+            }
+
+            match ip {
+                IpAddr::V4(_) => return Some(ip),
+                IpAddr::V6(_) => continue,
+            }
+        }
+    }
+
+    if let Ok(ip) = local_ip() {
+        if is_usable_ip(&ip) {
+            return Some(ip);
+        }
+    }
+
+    None
+}
+
+fn is_virtual_iface(iface: &str) -> bool {
+    let name = iface.to_ascii_lowercase();
+    matches!(name.as_str(), "lo" | "localhost" | "loopback")
+        || name.starts_with("docker")
+        || name.starts_with("br-")
+        || name.starts_with("veth")
+        || name.starts_with("virbr")
+        || name.starts_with("vmnet")
+        || name.starts_with("tailscale")
+        || name.starts_with("wg")
+        || name.starts_with("tun")
+        || name.starts_with("tap")
+        || name.starts_with("zt")
+}
+
+fn is_usable_ip(ip: &IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            if v4.is_loopback() {
+                return false;
+            }
+            let octets = v4.octets();
+            if octets[0] == 169 && octets[1] == 254 {
+                return false; // IPv4 link-local
+            }
+            true
+        }
+        IpAddr::V6(_) => false,
+    }
 }
 
 // Helper functions for PID file management

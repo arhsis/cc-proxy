@@ -55,6 +55,50 @@ cc-proxy status
 cc-proxy stop
 ```
 
+`cc-proxy` listens on `0.0.0.0:18100` by default and automatically detects your LAN IP.
+Share the reported URL (for example `http://192.168.1.252:18100`) with other machines
+so their CLIs can reuse the same proxy and provider configuration.
+
+### Machine B (remote CLI) example
+
+When **Machine A** runs `cc-proxy start` and shows `Share this URL: http://192.168.0.10:18100`,
+you can point **Machine B**'s CLI tools to that proxy without running another daemon.
+Create these minimal config files on Machine B (replace the IP with the one reported by Machine A):
+
+**`~/.claude/settings.json`**
+
+```json
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "cc-proxy",
+    "ANTHROPIC_BASE_URL": "http://192.168.0.10:18100"
+  }
+}
+```
+
+**`~/.codex/config.toml`**
+
+```toml
+preferred_auth_method = "apikey"
+model = "gpt-5-codex"
+model_provider = "cc-proxy"
+
+[model_providers.cc-proxy]
+name = "cc-proxy"
+base_url = "http://192.168.0.10:18100"
+env_key = "OPENAI_API_KEY"
+wire_api = "responses"
+requires_openai_auth = false
+```
+
+**`~/.codex/auth.json`**
+
+```json
+{
+  "OPENAI_API_KEY": "cc-proxy"
+}
+```
+
 ### Configuration
 
 Create your configuration file at `~/.cc-proxy/provider.json`.
@@ -129,6 +173,49 @@ cc-proxy status
 
 # 停止代理并恢复 CLI 配置
 cc-proxy stop
+```
+
+默认会监听 `0.0.0.0:18100` 并自动检测本机可访问的 IP。
+将自动提示的地址（如 `http://192.168.1.252:18100`）分享给其他主机，即可让它们共用同一个代理与 provider 配置。
+
+### 机器 B（远程 CLI）示例
+
+当 **机器 A** 执行 `cc-proxy start` 并输出 `Share this URL: http://192.168.0.10:18100` 时，
+**机器 B** 可以直接将各 CLI 指向该地址，无需再额外运行代理进程。
+在机器 B 上创建以下最小配置文件（记得将 IP 替换为机器 A 实际输出的地址）：
+
+**`~/.claude/settings.json`**
+
+```json
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "cc-proxy",
+    "ANTHROPIC_BASE_URL": "http://192.168.0.10:18100"
+  }
+}
+```
+
+**`~/.codex/config.toml`**
+
+```toml
+preferred_auth_method = "apikey"
+model = "gpt-5-codex"
+model_provider = "cc-proxy"
+
+[model_providers.cc-proxy]
+name = "cc-proxy"
+base_url = "http://192.168.0.10:18100"
+env_key = "OPENAI_API_KEY"
+wire_api = "responses"
+requires_openai_auth = false
+```
+
+**`~/.codex/auth.json`**
+
+```json
+{
+  "OPENAI_API_KEY": "cc-proxy"
+}
 ```
 
 #### 配置
