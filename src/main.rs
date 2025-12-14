@@ -274,10 +274,10 @@ fn detect_advertise_addr(bind_addr: &str) -> String {
     }
 
     tracing::warn!(
-        "Falling back to {} for CLI configuration; could not detect LAN IP",
-        DEFAULT_BIND_ADDR
+        "Falling back to 127.0.0.1:{} for CLI configuration; could not detect LAN IP",
+        port
     );
-    DEFAULT_BIND_ADDR.to_string()
+    format!("127.0.0.1:{}", port)
 }
 
 fn pick_local_ip() -> Option<IpAddr> {
