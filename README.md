@@ -56,7 +56,7 @@ cc-proxy stop
 ```
 
 `cc-proxy` listens on `0.0.0.0:18100` by default and automatically detects your LAN IP.
-Share the reported URL (for example `http://192.1.168.252:18100`) with other machines
+Share the reported URL (for example `http://192.168.1.252:18100`) with other machines
 so their CLIs can reuse the same proxy and provider configuration.
 
 ### Machine B (remote CLI) example
