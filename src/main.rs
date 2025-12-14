@@ -267,7 +267,7 @@ fn detect_advertise_addr(bind_addr: &str) -> String {
         }
     }
 
-    if let Some(ip) = pick_local_ip() {
+    if let Some(ip) = detect_lan_ip() {
         let addr = format!("{}:{}", ip, port);
         tracing::info!("Detected LAN address for CLI config: {}", addr);
         return addr;
@@ -280,7 +280,7 @@ fn detect_advertise_addr(bind_addr: &str) -> String {
     format!("127.0.0.1:{}", port)
 }
 
-fn pick_local_ip() -> Option<IpAddr> {
+fn detect_lan_ip() -> Option<IpAddr> {
     if let Ok(netifs) = list_afinet_netifas() {
         let mut ipv4_candidate = None;
         let mut ipv6_candidate = None;
