@@ -282,30 +282,15 @@ fn detect_advertise_addr(bind_addr: &str) -> String {
 
 fn detect_lan_ip() -> Option<IpAddr> {
     if let Ok(netifs) = list_afinet_netifas() {
-        let mut ipv4_candidate = None;
-        let mut ipv6_candidate = None;
-
         for (iface, ip) in netifs {
             if is_virtual_iface(&iface) || !is_usable_ip(&ip) {
                 continue;
             }
 
             match ip {
-                IpAddr::V4(_) => {
-                    ipv4_candidate = Some(ip);
-                    break;
-                }
-                IpAddr::V6(_) => {
-                    ipv6_candidate = ipv6_candidate.or(Some(ip));
-                }
+                IpAddr::V4(_) => return Some(ip),
+                IpAddr::V6(_) => continue,
             }
-        }
-
-        if ipv4_candidate.is_some() {
-            return ipv4_candidate;
-        }
-        if ipv6_candidate.is_some() {
-            return ipv6_candidate;
         }
     }
 
@@ -333,12 +318,6 @@ fn is_virtual_iface(iface: &str) -> bool {
         || name.starts_with("zt")
 }
 
-fn is_ipv6_unicast_link_local(v6: &std::net::Ipv6Addr) -> bool {
-    // fe80::/10
-    let seg0 = v6.segments()[0];
-    (seg0 & 0xffc0) == 0xfe80
-}
-
 fn is_usable_ip(ip: &IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
@@ -351,14 +330,7 @@ fn is_usable_ip(ip: &IpAddr) -> bool {
             }
             true
         }
-        IpAddr::V6(v6) => {
-            // Treat IPv6 Unique Local Addresses (ULA, fc00::/7) as usable, analogous to
-            // private IPv4 (e.g., 192.168.0.0/16). Still reject loopback/unspecified/link-local.
-            if v6.is_loopback() || v6.is_unspecified() {
-                return false;
-            }
-            !is_ipv6_unicast_link_local(v6)
-        }
+        IpAddr::V6(_) => false,
     }
 }
 
