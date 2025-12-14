@@ -333,6 +333,12 @@ fn is_virtual_iface(iface: &str) -> bool {
         || name.starts_with("zt")
 }
 
+fn is_ipv6_unicast_link_local(v6: &std::net::Ipv6Addr) -> bool {
+    // fe80::/10
+    let seg0 = v6.segments()[0];
+    (seg0 & 0xffc0) == 0xfe80
+}
+
 fn is_usable_ip(ip: &IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
@@ -346,10 +352,12 @@ fn is_usable_ip(ip: &IpAddr) -> bool {
             true
         }
         IpAddr::V6(v6) => {
-            if v6.is_loopback() || v6.is_unique_local() || v6.is_unspecified() {
+            // Treat IPv6 Unique Local Addresses (ULA, fc00::/7) as usable, analogous to
+            // private IPv4 (e.g., 192.168.0.0/16). Still reject loopback/unspecified/link-local.
+            if v6.is_loopback() || v6.is_unspecified() {
                 return false;
             }
-            !v6.is_unicast_link_local()
+            !is_ipv6_unicast_link_local(v6)
         }
     }
 }
