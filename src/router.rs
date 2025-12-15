@@ -332,16 +332,33 @@ impl Router {
 
         // Check for WAF/firewall blocks (provider returns 200 but with error content)
         if let Some(tengine_error) = response.headers().get("x-tengine-error") {
-            anyhow::bail!("Provider blocked by WAF: {:?}", tengine_error);
+            match tengine_error.to_str() {
+                Ok(err) => tracing::warn!(
+                    "Provider indicated potential WAF block via x-tengine-error={}, forwarding anyway",
+                    err
+                ),
+                Err(_) => tracing::warn!(
+                    "Provider indicated potential WAF block via x-tengine-error (non-UTF8), forwarding anyway"
+                ),
+            }
         }
 
-        // Verify content-type is JSON (providers should return application/json)
-        let content_type_value = response.headers().get("content-type").cloned();
-        if let Some(content_type) = content_type_value {
-            if let Ok(ct_str) = content_type.to_str() {
-                if !ct_str.contains("application/json") && !ct_str.contains("text/event-stream") {
-                    anyhow::bail!("Provider returned non-JSON content-type: {}", ct_str);
+        // Verify content-type is JSON/SSE; warn but continue so we don't mask upstream responses
+        if let Some(content_type) = response.headers().get("content-type") {
+            match content_type.to_str() {
+                Ok(ct_str)
+                    if !ct_str.contains("application/json")
+                        && !ct_str.contains("text/event-stream") =>
+                {
+                    tracing::warn!(
+                        "Provider returned unexpected content-type '{}', forwarding response anyway",
+                        ct_str
+                    );
                 }
+                Err(_) => tracing::warn!(
+                    "Provider returned non-UTF8 content-type header, forwarding response anyway"
+                ),
+                _ => {}
             }
         }
 
