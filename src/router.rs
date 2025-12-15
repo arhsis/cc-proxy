@@ -327,11 +327,27 @@ impl Router {
             anyhow::bail!("Provider returned error status: {}", status);
         }
 
+        // Check for WAF/firewall blocks (provider returns 200 but with error content)
+        if let Some(tengine_error) = response.headers().get("x-tengine-error") {
+            anyhow::bail!("Provider blocked by WAF: {:?}", tengine_error);
+        }
+
+        // Verify content-type is JSON (providers should return application/json)
+        let content_type_value = response.headers().get("content-type").cloned();
+        if let Some(content_type) = content_type_value {
+            if let Ok(ct_str) = content_type.to_str() {
+                if !ct_str.contains("application/json") && !ct_str.contains("text/event-stream") {
+                    anyhow::bail!("Provider returned non-JSON content-type: {}", ct_str);
+                }
+            }
+        }
+
         // Convert reqwest::Response to axum Response
         let axum_status = StatusCode::from_u16(status.as_u16())?;
         let mut axum_response = Response::builder().status(axum_status);
 
         // Copy headers - convert from reqwest to axum
+        let mut has_gzip_encoding = false;
         for (key, value) in response.headers() {
             let key_str = key.as_str();
             let is_hop_by_hop = matches!(
@@ -345,23 +361,61 @@ impl Router {
                     | "trailers"
             );
 
+            // Check for content-encoding: gzip
+            if key_str.eq_ignore_ascii_case("content-encoding") {
+                if let Ok(val_str) = value.to_str() {
+                    if val_str.eq_ignore_ascii_case("gzip") {
+                        has_gzip_encoding = true;
+                        tracing::debug!("Response is gzip-encoded, will decompress");
+                        // Skip forwarding content-encoding header since we'll decompress
+                        continue;
+                    }
+                }
+            }
+
             // Skip hop-by-hop headers and let hyper set the correct length for the body we forward.
             if is_hop_by_hop || key_str.eq_ignore_ascii_case("content-length") {
+                tracing::debug!("Skipping header: {}", key_str);
                 continue;
             }
 
             if let Ok(val) = HeaderValue::from_bytes(value.as_bytes()) {
+                tracing::debug!("Forwarding header: {}: {:?}", key_str, val);
                 axum_response = axum_response.header(key_str, val);
             }
         }
 
-        // Get body bytes
-        let body_bytes = response
-            .bytes()
-            .await
-            .context("Failed to read response body")?;
+        // Stream the response body directly without buffering
+        use futures::TryStreamExt;
+        use async_compression::tokio::bufread::GzipDecoder;
+        use tokio_util::io::StreamReader;
 
-        let body = Body::from(body_bytes);
+        let stream = response.bytes_stream().map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::Other, e)
+        });
+
+        let body = if has_gzip_encoding {
+            // Decompress gzipped response
+            tracing::debug!("Decompressing gzipped response");
+            let reader = StreamReader::new(stream);
+            let decoder = GzipDecoder::new(reader);
+            let decompressed_stream = tokio_util::io::ReaderStream::new(decoder).map_err(|e| {
+                std::io::Error::new(std::io::ErrorKind::Other, e)
+            });
+            Body::from_stream(decompressed_stream)
+        } else {
+            // Pass through uncompressed
+            Body::from_stream(stream.inspect_ok(|chunk| {
+                // Debug: log first few bytes of each chunk
+                if !chunk.is_empty() {
+                    let preview = &chunk[..chunk.len().min(50)];
+                    match std::str::from_utf8(preview) {
+                        Ok(s) => tracing::debug!("Response chunk (UTF-8): {:?}...", s),
+                        Err(_) => tracing::debug!("Response chunk (bytes): {:02x?}...", &preview[..preview.len().min(20)]),
+                    }
+                }
+            }))
+        };
 
         axum_response.body(body).context("Failed to build response")
     }
