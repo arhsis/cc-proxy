@@ -92,7 +92,8 @@ pub fn configure_codex(proxy_addr: &str) -> Result<()> {
     cc_provider.insert("wire_api".into(), toml::Value::String("responses".into()));
     cc_provider.insert("requires_openai_auth".into(), toml::Value::Boolean(false));
 
-    let config_toml = toml::Value::Table(config_table).to_string();
+    let config_toml = toml::to_string_pretty(&config_table)
+        .context("Failed to serialize Codex config to TOML")?;
     fs::write(&config_path, config_toml).context("Failed to write Codex config.toml")?;
 
     // Write auth.json
