@@ -1,15 +1,18 @@
 use crate::cache_affinity::{hash_string, CacheAffinityManager};
 use crate::provider::{load_providers, Provider};
 use anyhow::{Context, Result};
+use async_compression::tokio::bufread::GzipDecoder;
 use axum::{
     body::Body,
     http::{HeaderMap, HeaderValue, Response, StatusCode},
 };
 use bytes::Bytes;
+use futures::TryStreamExt;
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
+use tokio_util::io::StreamReader;
 
 #[derive(Clone)]
 struct ResolvedProvider {
@@ -386,10 +389,6 @@ impl Router {
         }
 
         // Stream the response body directly without buffering
-        use futures::TryStreamExt;
-        use async_compression::tokio::bufread::GzipDecoder;
-        use tokio_util::io::StreamReader;
-
         let stream = response.bytes_stream().map_err(|e| {
             std::io::Error::new(std::io::ErrorKind::Other, e)
         });
