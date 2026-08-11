@@ -1,3 +1,5 @@
+
+
 # cc-proxy
 
 Language | 语言: [English](#english) · [中文](#中文)
@@ -148,7 +150,7 @@ You can define separate provider lists for **Codex** and **Claude**. The proxy t
 
 ```bash
 # 克隆仓库
-git clone https://github.com/yourusername/cc-proxy.git
+git clone https://github.com/arhsis/cc-proxy.git
 cd cc-proxy
 
 # 构建发布版本
